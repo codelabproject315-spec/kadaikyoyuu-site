@@ -4,56 +4,54 @@ import datetime
 import streamlit as st
 from botocore.exceptions import ClientError
 
-# --- 設定の読み込み ---
-# Streamlit CloudのSecretsまたはローカルの.envから取得
-try:
-    # 優先順位: 1. st.secrets (Cloud用) / 2. os.getenv (ローカル.env用)
-    BUCKET_NAME = st.secrets.get("S3_BUCKET_NAME") or os.getenv("S3_BUCKET_NAME")
-    TABLE_NAME = st.secrets.get("DYNAMODB_TABLE_NAME") or os.getenv("DYNAMODB_TABLE_NAME")
-    REGION = st.secrets.get("AWS_REGION") or os.getenv("AWS_REGION", "ap-northeast-1")
-except Exception:
-    # Secretsが設定されていない初期状態の回避
-    BUCKET_NAME = None
-    TABLE_NAME = None
-    REGION = "ap-northeast-1"
+# --- 設定の読み込み (Secrets優先) ---
+def get_secret(key, default=None):
+    return st.secrets.get(key) or os.getenv(key) or default
+
+BUCKET_NAME = get_secret("S3_BUCKET_NAME")
+# 提供された名前に合わせて DYNAMO_TABLE_NAME を参照
+TABLE_NAME = get_secret("DYNAMO_TABLE_NAME") 
+REGION = get_secret("AWS_DEFAULT_REGION", "ap-northeast-1")
+ACCESS_KEY = get_secret("AWS_ACCESS_KEY_ID")
+SECRET_KEY = get_secret("AWS_SECRET_ACCESS_KEY")
 
 # AWSクライアントの初期化
-# ローカルで実行し、環境変数に認証情報がない場合は st.secrets から渡すことも可能
-s3 = boto3.client('s3', region_name=REGION)
-dynamodb = boto3.resource('dynamodb', region_name=REGION)
+# Secretsに認証情報がある場合、明示的に渡すことで接続を確実にします
+session = boto3.Session(
+    aws_access_key_id=ACCESS_KEY,
+    aws_secret_access_key=SECRET_KEY,
+    region_name=REGION
+)
+
+s3 = session.client('s3')
+dynamodb = session.resource('dynamodb')
 
 def get_table():
-    """テーブルオブジェクトを安全に取得する"""
     if not TABLE_NAME:
-        st.error("❌ DYNAMODB_TABLE_NAME が設定されていません。Secretsを確認してください。")
+        st.error("❌ DYNAMO_TABLE_NAME が設定されていません。")
         return None
     return dynamodb.Table(TABLE_NAME)
 
 def upload_exam(file, subject, year):
-    """S3にファイルをアップロードし、DynamoDBにメタデータを保存する"""
     table = get_table()
     if not table or not BUCKET_NAME:
         return False
 
-    # ファイルパスの生成 (S3上のKey)
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     file_key = f"exams/{year}/{subject}_{timestamp}_{file.name}"
     
     try:
-        # 1. S3へアップロード
         s3.upload_fileobj(
             file, 
             BUCKET_NAME, 
             file_key,
-            ExtraArgs={'ContentType': file.type} # ブラウザで開きやすくするため
+            ExtraArgs={'ContentType': file.type}
         )
         
-        # S3のURL構築 (パブリック読み取り設定がない場合は署名付きURLが必要になる場合があります)
         file_url = f"https://{BUCKET_NAME}.s3.{REGION}.amazonaws.com/{file_key}"
         
-        # 2. DynamoDBへ保存
         table.put_item(Item={
-            'exam_id': file_key,  # パーティションキー
+            'exam_id': file_key,
             'subject': subject,
             'year': int(year),
             'file_url': file_url,
@@ -61,40 +59,29 @@ def upload_exam(file, subject, year):
             'created_at': datetime.datetime.now().isoformat()
         })
         return True
-    except ClientError as e:
-        st.error(f"AWS Error: {e.response['Error']['Message']}")
-        return False
     except Exception as e:
-        st.error(f"予期せぬエラー: {e}")
+        st.error(f"アップロードエラー: {e}")
         return False
 
 def get_all_exams():
-    """DynamoDBから全データを取得する"""
     table = get_table()
     if not table:
         return []
-
     try:
         response = table.scan()
         return response.get('Items', [])
-    except ClientError as e:
-        st.error(f"データ取得失敗: {e.response['Error']['Message']}")
+    except Exception as e:
+        st.error(f"取得エラー: {e}")
         return []
 
 def delete_exam(exam_id, file_key):
-    """S3とDynamoDBの両方から削除する"""
     table = get_table()
-    if not table or not BUCKET_NAME:
+    if not table:
         return False
-
     try:
-        # 1. S3からオブジェクトを削除
         s3.delete_object(Bucket=BUCKET_NAME, Key=file_key)
-        
-        # 2. DynamoDBからレコードを削除
         table.delete_item(Key={'exam_id': exam_id})
-        
         return True
-    except ClientError as e:
-        st.error(f"削除エラー: {e.response['Error']['Message']}")
+    except Exception as e:
+        st.error(f"削除エラー: {e}")
         return False
