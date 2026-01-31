@@ -40,3 +40,20 @@ def get_all_exams():
     response = table.scan()
     # 作成日順にソートして返す
     return sorted(response.get("Items", []), key=lambda x: x["created_at"], reverse=True)  
+
+# utils/aws_helper.py に追加
+def delete_exam(exam):
+    try:
+        # 1. S3からファイルを削除 (URLからキーを特定する場合)
+        # ※実装に合わせて調整してください
+        file_key = exam['file_url'].split('/')[-1]
+        s3.delete_object(Bucket=BUCKET_NAME, Key=file_key)
+
+        # 2. DynamoDBからレコードを削除
+        # ※ exam['id'] がパーティションキーである前提です
+        table.delete_item(Key={'id': exam['id']})
+        
+        return True
+    except Exception as e:
+        print(f"Delete Error: {e}")
+        return False
