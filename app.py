@@ -29,7 +29,7 @@ def check_password():
 
     _, col, _ = st.columns([1, 2, 1])
     with col:
-        st.title("🔒 過去問アーカイブ")
+        st.title("🔒 ログイン")
         # 案内文を削除し、シンプルなフォームに
         with st.form("login_form"):
             st.text_input("ユーザー名", key="username", placeholder="ユーザー名を入力してください")
@@ -87,7 +87,7 @@ def fetch_all_data():
     return demo_exams + exams
 
 # --- 4. メインコンテンツ ---
-st.title("📝 過去問アーカイブ")
+st.title("📝 過去問掲示サイト")
 all_exams = fetch_all_data()
 
 c1, c2 = st.columns([3, 1])
