@@ -27,18 +27,15 @@ def check_password():
         else:
             st.session_state["password_correct"] = False
 
-    if not st.session_state.get("password_correct", False):
-        _, col, _ = st.columns([1, 2, 1])
-        with col:
-            st.title("🔒 Login")
-            st.text_input("ユーザー名", key="username")
-            # Enterキーでも実行可能に
-            st.text_input("パスワード", type="password", key="password", on_change=password_entered) 
-            st.button("ログイン", on_click=password_entered, use_container_width=True)
-            if st.session_state.get("password_correct") == False:
-                st.error("😕 認証に失敗しました")
-        return False
-    return True
+    _, col, _ = st.columns([1, 2, 1])
+    with col:
+        st.title("🔒 ログインが必要です")
+        st.text_input("ユーザー名", key="username")
+        st.text_input("パスワード", type="password", key="password")
+        st.button("ログイン", on_click=password_entered, use_container_width=True)
+        if st.session_state.get("password_correct") == False:
+            st.error("😕 ユーザー名またはパスワードが正しくありません")
+    return False
 
 # ログインしていない場合は処理を停止
 if not check_password():
@@ -100,6 +97,7 @@ c1, c2 = st.columns([3, 1])
 with c1:
     search_query = st.text_input("教科名で検索", placeholder="教科名を入力してください...")
 with c2:
+    # 年度リストの作成
     years = sorted(list(set(exam['year'] for exam in all_exams)), reverse=True)
     year_filter = st.selectbox("年度で絞り込み", ["すべて"] + years)
 
@@ -111,30 +109,28 @@ filtered_exams = [
 ]
 filtered_exams.sort(key=lambda x: x.get('created_at', ''), reverse=True)
 
-# 一覧表示（改善されたテーブル表示）
+# 一覧表示
 if not filtered_exams:
     st.info("条件に一致するデータが見つかりませんでした。")
 else:
-    # 見出し
-    h_col1, h_col2, h_col3, h_col4 = st.columns([3, 1, 2, 1])
+    # ヘッダー行
+    h_col1, h_col2, h_col3, h_col4 = st.columns([2, 1, 2, 1])
     h_col1.write("**教科名**")
     h_col2.write("**年度**")
     h_col3.write("**登録日時**")
-    h_col4.write("**操作**")
+    h_col4.write("**アクション**")
     st.divider()
 
     for i, exam in enumerate(filtered_exams):
-        with st.container():
-            col1, col2, col3, col4 = st.columns([3, 1, 2, 1])
-            with col1:
-                # 教科名を強調
-                st.markdown(f"**{exam['subject']}**")
-            with col2:
-                st.text(f"{exam['year']}年度")
-            with col3:
-                raw_date = exam.get('created_at', '不明')
-                created_at = raw_date[:16].replace('T', ' ') if raw_date != '不明' else '不明'
-                st.caption(f"📅 {created_at}")
-            with col4:
-                st.link_button("📄 表示", exam['file_url'], use_container_width=True)
-            st.divider()
+        col1, col2, col3, col4 = st.columns([2, 1, 2, 1])
+        col1.write(exam['subject'])
+        col2.write(f"{exam['year']}年度")
+        
+        # 日時フォーマットの調整
+        raw_date = exam.get('created_at', '不明')
+        created_at = raw_date[:16].replace('T', ' ') if raw_date != '不明' else '不明'
+        col3.write(created_at)
+        
+        # リンクボタン
+        col4.link_button("開く", exam['file_url'], use_container_width=True)
+        st.divider()
