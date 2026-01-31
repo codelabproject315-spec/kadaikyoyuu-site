@@ -1,27 +1,27 @@
 import boto3
-import os
 import datetime
 import streamlit as st
 from botocore.exceptions import ClientError
 
-# --- 1. 設定の取得 (安全な読み込み) ---
+# --- 1. 設定の取得 (st.secrets に完全統一) ---
 def get_config():
-    """Secretsまたは環境変数から設定を一括取得する"""
+    """Streamlit Secrets から設定を一括取得する"""
     return {
-        "ACCESS_KEY": st.secrets.get("AWS_ACCESS_KEY_ID") or os.getenv("AWS_ACCESS_KEY_ID"),
-        "SECRET_KEY": st.secrets.get("AWS_SECRET_ACCESS_KEY") or os.getenv("AWS_SECRET_ACCESS_KEY"),
-        "REGION": st.secrets.get("AWS_DEFAULT_REGION") or os.getenv("AWS_DEFAULT_REGION", "ap-northeast-1"),
-        "BUCKET_NAME": st.secrets.get("S3_BUCKET_NAME") or os.getenv("S3_BUCKET_NAME"),
-        "TABLE_NAME": st.secrets.get("DYNAMO_TABLE_NAME") or os.getenv("DYNAMODB_TABLE_NAME") # 表記揺れに対応
+        "ACCESS_KEY": st.secrets.get("AWS_ACCESS_KEY_ID"),
+        "SECRET_KEY": st.secrets.get("AWS_SECRET_ACCESS_KEY"),
+        "REGION": st.secrets.get("AWS_DEFAULT_REGION", "ap-northeast-1"),
+        "BUCKET_NAME": st.secrets.get("S3_BUCKET_NAME"),
+        "TABLE_NAME": st.secrets.get("DYNAMO_TABLE_NAME")
     }
 
 # --- 2. AWSリソースの取得 ---
 def get_aws_resources():
     config = get_config()
     
-    # 必須設定が欠けている場合のチェック
-    if not all([config["ACCESS_KEY"], config["SECRET_KEY"], config["TABLE_NAME"]]):
-        st.error("❌ AWS設定（Access Key, Secret Key, または Table Name）が見つかりません。")
+    # 必須設定が欠けている場合のチェック (Bucket Nameも追加)
+    required_keys = ["ACCESS_KEY", "SECRET_KEY", "BUCKET_NAME", "TABLE_NAME"]
+    if not all(config.get(k) for k in required_keys):
+        st.error("❌ AWS設定（Access Key, Secret Key, Bucket, または Table Name）が Secrets に見つかりません。")
         return None, None, None
 
     try:
