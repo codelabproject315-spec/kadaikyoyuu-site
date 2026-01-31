@@ -28,7 +28,6 @@ def check_password():
             st.session_state["password_correct"] = False
 
     if "password_correct" not in st.session_state:
-        # 初回アクセス時：中央にログインフォームを表示
         _, col, _ = st.columns([1, 2, 1])
         with col:
             st.title("🔒 ログインが必要です")
@@ -37,7 +36,6 @@ def check_password():
             st.button("ログイン", on_click=password_entered)
         return False
     elif not st.session_state["password_correct"]:
-        # 失敗時
         _, col, _ = st.columns([1, 2, 1])
         with col:
             st.title("🔒 ログインが必要です")
@@ -47,7 +45,6 @@ def check_password():
             st.error("😕 ユーザー名またはパスワードが正しくありません")
         return False
     else:
-        # 成功時
         return True
 
 # ログインが通るまでこれ以降のコードを実行させない
@@ -78,46 +75,64 @@ with st.sidebar.form("upload_form", clear_on_submit=True):
         else:
             st.sidebar.warning("教科名とファイルは必須です。")
 
-# メインエリア：一覧表示
-st.header("登録済み試験一覧")
-
-# AWSからデータを取得
+# --- 3. データ取得と加工 ---
 try:
     exams = get_all_exams()
 except Exception as e:
     st.error(f"データ取得エラー: {e}")
     exams = []
 
-# --- デモデータ ---
+# デモデータ
 demo_exams = [
-    {
-        "subject": "【デモ】数学I",
-        "year": 2023,
-        "created_at": "2024-01-01T10:00:00",
-        "file_url": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf"
-    },
-    {
-        "subject": "【デモ】英語コミュニケーション",
-        "year": 2022,
-        "created_at": "2024-01-02T15:30:00",
-        "file_url": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf"
-    }
+    {"subject": "【デモ】数学I", "year": 2023, "created_at": "2024-01-01T10:00:00", "file_url": "#"},
+    {"subject": "【デモ】英語コミュニケーション", "year": 2022, "created_at": "2024-01-02T15:30:00", "file_url": "#"}
 ]
 
-# 実データと合体
 all_exams = demo_exams + exams
 
-if not all_exams:
-    st.info("登録されているデータはまだありません。")
+# --- 4. 検索・フィルタリング UI ---
+st.header("登録済み試験一覧")
+
+# 検索バーと年度フィルターを横並びに配置
+c1, c2 = st.columns([3, 1])
+with c1:
+    search_query = st.text_input("🔍 教科名で検索", placeholder="教科名を入力してください...")
+with c2:
+    available_years = sorted(list(set(exam['year'] for exam in all_exams)), reverse=True)
+    year_filter = st.selectbox("年度で絞り込み", ["すべて"] + available_years)
+
+# フィルタリング処理
+filtered_exams = []
+for exam in all_exams:
+    match_subject = search_query.lower() in exam['subject'].lower()
+    match_year = (year_filter == "すべて") or (exam['year'] == year_filter)
+    if match_subject and match_year:
+        filtered_exams.append(exam)
+
+# ソート処理（新しいアップロード順）
+filtered_exams.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+
+# --- 5. 一覧表示 ---
+if not filtered_exams:
+    st.info("条件に一致するデータが見つかりませんでした。")
 else:
-    for exam in all_exams:
+    # ヘッダー行
+    h_col1, h_col2, h_col3, h_col4 = st.columns([2, 1, 2, 1])
+    h_col1.write("**教科名**")
+    h_col2.write("**年度**")
+    h_col3.write("**登録日時**")
+    h_col4.write("**アクション**")
+    st.divider()
+
+    for exam in filtered_exams:
         with st.container():
-            col1, col2, col3, col4 = st.columns([2, 1, 3, 1])
-            col1.write(f"**{exam['subject']}**")
+            col1, col2, col3, col4 = st.columns([2, 1, 2, 1])
+            col1.write(exam['subject'])
             col2.write(f"{exam['year']}年度")
             
+            # 日時フォーマットの整形
             created_at = exam.get('created_at', '不明')[:16].replace('T', ' ')
-            col3.write(f"作成日: {created_at}")
+            col3.write(created_at)
             
-            col4.link_button("ファイルを開く", exam['file_url'])
+            col4.link_button("開く", exam['file_url'], use_container_width=True)
             st.divider()
