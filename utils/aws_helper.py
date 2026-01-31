@@ -7,8 +7,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # AWS設定（環境変数から読み込み）
-S3_BUCKET = "your-bucket-name"
-DYNAMO_TABLE = "your-table-name"
+S3_BUCKET = "kadaikyoyuu-site"
+DYNAMO_TABLE = "exams-table"
 REGION = "ap-northeast-1"
 
 s3 = boto3.client("s3")
