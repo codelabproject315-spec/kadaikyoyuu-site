@@ -1,10 +1,5 @@
 import streamlit as st
-import os
-from dotenv import load_dotenv
 from utils.aws_helper import upload_exam, get_all_exams
-
-# .envファイルを読み込む（ローカル開発用）
-load_dotenv()
 
 # --- UI設定 ---
 st.set_page_config(page_title="過去問掲示サイト", layout="wide")
@@ -13,9 +8,10 @@ st.set_page_config(page_title="過去問掲示サイト", layout="wide")
 def check_password():
     """ユーザー名とパスワードが一致するか確認する関数"""
     def password_entered():
-        # ローカル（.env）または クラウド（Secrets）から設定値を取得
-        correct_username = os.getenv("LOGIN_USERNAME") or st.secrets.get("auth", {}).get("username")
-        correct_password = os.getenv("LOGIN_PASSWORD") or st.secrets.get("auth", {}).get("password")
+        # st.secrets から設定値を取得（.streamlit/secrets.toml または 管理画面の設定）
+        auth_secrets = st.secrets.get("auth", {})
+        correct_username = auth_secrets.get("username")
+        correct_password = auth_secrets.get("password")
 
         if (
             st.session_state["username"] == correct_username
@@ -98,7 +94,9 @@ c1, c2 = st.columns([3, 1])
 with c1:
     search_query = st.text_input("🔍 教科名で検索", placeholder="教科名を入力してください...")
 with c2:
-    available_years = sorted(list(set(exam['year'] for exam in all_exams)), reverse=True)
+    # データの年度をリスト化（重複排除）
+    years = [exam['year'] for exam in all_exams]
+    available_years = sorted(list(set(years)), reverse=True)
     year_filter = st.selectbox("年度で絞り込み", ["すべて"] + available_years)
 
 # フィルタリング処理
