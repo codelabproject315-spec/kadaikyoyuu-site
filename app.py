@@ -55,7 +55,7 @@ with st.sidebar.form("upload_form", clear_on_submit=True):
                 try:
                     if upload_exam(uploaded_file, subject, year):
                         st.sidebar.success("アップロード完了！")
-                        st.cache_data.clear() # キャッシュをクリアして最新化
+                        st.cache_data.clear() 
                         st.rerun()
                 except Exception as e:
                     st.sidebar.error(f"エラー: {e}")
@@ -70,10 +70,13 @@ def fetch_all_data():
     except:
         exams = []
     
-    # デモデータのURLを"#"ではなく、実際のリンク（例としてGoogle）に変更
+    # デモデータのURLをサンプルPDFの直リンクに変更
+    # これにより「開く」を押すとブラウザでPDFが開きます
+    demo_pdf_url = "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf"
+    
     demo_exams = [
-        {"subject": "【デモ】数学I", "year": 2023, "created_at": "2024-01-01T10:00:00", "file_url": "https://www.google.com"},
-        {"subject": "【デモ】英語コミュニケーション", "year": 2022, "created_at": "2024-01-02T15:30:00", "file_url": "https://www.google.com"}
+        {"subject": "【デモ】数学I", "year": 2023, "created_at": "2024-01-01T10:00:00", "file_url": demo_pdf_url},
+        {"subject": "【デモ】英語コミュニケーション", "year": 2022, "created_at": "2024-01-02T15:30:00", "file_url": demo_pdf_url}
     ]
     return demo_exams + exams
 
@@ -99,6 +102,7 @@ filtered_exams.sort(key=lambda x: x.get('created_at', ''), reverse=True)
 if not filtered_exams:
     st.info("条件に一致するデータが見つかりませんでした。")
 else:
+    # テーブルヘッダー
     h_col1, h_col2, h_col3, h_col4 = st.columns([2, 1, 2, 1])
     h_col1.write("**教科名**")
     h_col2.write("**年度**")
@@ -114,6 +118,6 @@ else:
         created_at = exam.get('created_at', '不明')[:16].replace('T', ' ')
         col3.write(created_at)
         
-        # ボタンを常に有効化（URLが開けるように修正）
+        # 修正：常にlink_buttonを使用して、PDFのURLへ飛ばす
         col4.link_button("開く", exam['file_url'], use_container_width=True)
         st.divider()
