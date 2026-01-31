@@ -73,7 +73,7 @@ def fetch_all_data():
     return demo_exams + exams
 
 # --- 4. メイン ---
-st.title("📝 過去問アーカイブ")
+st.title("📝 過去問掲示サイト")
 all_exams = fetch_all_data()
 
 c1, c2 = st.columns([3, 1])
