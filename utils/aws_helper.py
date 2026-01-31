@@ -62,16 +62,22 @@ def get_all_exams():
         response = table.scan()
         return response.get('Items', [])
     except Exception as e:
-        # 初回起動時などでテーブルが空、または接続エラーの場合
         return []
 
 def delete_exam(exam_id, file_key):
+    """S3とDynamoDBからの削除処理（データ欠落に対応）"""
     table = get_table()
     if not table: return False
     try:
-        # S3から削除
-        s3.delete_object(Bucket=BUCKET_NAME, Key=file_key)
-        # DynamoDBから削除
+        # 1. file_key（S3のパス）がある場合のみS3から削除
+        if file_key and str(file_key) != "None":
+            try:
+                s3.delete_object(Bucket=BUCKET_NAME, Key=file_key)
+            except Exception as s3_e:
+                # ファイルが既になくてもDB削除へ進むために警告にとどめる
+                st.warning(f"S3ファイルの削除に失敗（スキップ）: {s3_e}")
+
+        # 2. DynamoDBからレコードを削除
         table.delete_item(Key={'exam_id': exam_id})
         return True
     except Exception as e:
