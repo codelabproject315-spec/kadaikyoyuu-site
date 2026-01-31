@@ -4,12 +4,10 @@ import datetime
 import streamlit as st
 from botocore.exceptions import ClientError
 
-# --- 設定の読み込み (Secretsから取得) ---
+# --- 設定の読み込み (Secrets優先) ---
 def get_secret(key, default=None):
-    # Streamlit Secretsを優先し、なければ環境変数を参照
     return st.secrets.get(key) or os.getenv(key) or default
 
-# Secretsの設定名に完全に合わせる
 BUCKET_NAME = get_secret("S3_BUCKET_NAME")
 TABLE_NAME = get_secret("DYNAMO_TABLE_NAME") 
 REGION = get_secret("AWS_DEFAULT_REGION", "ap-northeast-1")
@@ -54,7 +52,7 @@ def upload_exam(file, subject, year):
         })
         return True
     except Exception as e:
-        st.error(f"アップロードエラー: {e}")
+        st.error(f"AWSアップロードエラー: {e}")
         return False
 
 def get_all_exams():
@@ -64,16 +62,18 @@ def get_all_exams():
         response = table.scan()
         return response.get('Items', [])
     except Exception as e:
-        st.error(f"取得エラー: {e}")
+        # 初回起動時などでテーブルが空、または接続エラーの場合
         return []
 
 def delete_exam(exam_id, file_key):
     table = get_table()
     if not table: return False
     try:
+        # S3から削除
         s3.delete_object(Bucket=BUCKET_NAME, Key=file_key)
+        # DynamoDBから削除
         table.delete_item(Key={'exam_id': exam_id})
         return True
     except Exception as e:
-        st.error(f"削除エラー: {e}")
+        st.error(f"AWS削除エラー: {e}")
         return False
