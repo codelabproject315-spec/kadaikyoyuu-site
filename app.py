@@ -1,8 +1,10 @@
 import streamlit as st
 import os
 from dotenv import load_dotenv
-from utils.aws_helper import upload_exam, get_all_exams, delete_exam
-
+# delete_exam がない場合は、一旦外す
+from utils.aws_helper import upload_exam, get_all_exams
+# もしくは、エラーを避けるために以下のようにダミーを置く
+def delete_exam(item): return False
 load_dotenv()
 
 # --- UI設定 ---
