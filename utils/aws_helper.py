@@ -9,9 +9,10 @@ load_dotenv()
 # AWS設定（環境変数から読み込み）
 S3_BUCKET = "your-bucket-name"
 DYNAMO_TABLE = "your-table-name"
+REGION = "ap-northeast-1"
 
 s3 = boto3.client("s3")
-dynamodb = boto3.resource("dynamodb")
+dynamodb = boto3.resource("dynamodb", region_name=REGION)
 table = dynamodb.Table(DYNAMO_TABLE)
 
 def upload_exam(file, subject, year):
