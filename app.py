@@ -1,5 +1,6 @@
 import streamlit as st
 import os
+import pandas as pd
 from dotenv import load_dotenv
 from utils.aws_helper import upload_exam, get_all_exams
 
@@ -7,41 +8,46 @@ from utils.aws_helper import upload_exam, get_all_exams
 load_dotenv()
 
 # --- UI設定 ---
-st.set_page_config(page_title="過去問掲示サイト", layout="wide")
+st.set_page_config(page_title="過去問掲示サイト Pro", layout="wide")
 
-# --- 1. ログインチェック機能 ---
+# --- 1. ログインチェック機能 (UX改善版) ---
 def check_password():
     if st.session_state.get("password_correct", False):
         return True
 
-    def password_entered():
-        # 環境変数または st.secrets から取得
-        correct_username = os.getenv("LOGIN_USERNAME") or st.secrets.get("auth", {}).get("username")
-        correct_password = os.getenv("LOGIN_PASSWORD") or st.secrets.get("auth", {}).get("password")
+    def login_action():
+        # secrets.toml または .env から取得
+        correct_username = st.secrets.get("auth", {}).get("username") or os.getenv("LOGIN_USERNAME")
+        correct_password = st.secrets.get("auth", {}).get("password") or os.getenv("LOGIN_PASSWORD")
 
         if (st.session_state["username"] == correct_username and 
             st.session_state["password"] == correct_password):
             st.session_state["password_correct"] = True
-            del st.session_state["password"]  # セキュリティのため削除
+            del st.session_state["password"]  
             del st.session_state["username"]
         else:
             st.session_state["password_correct"] = False
 
-    _, col, _ = st.columns([1, 2, 1])
+    _, col, _ = st.columns([1, 1.5, 1])
     with col:
-        st.title("🔒 ログインが必要です")
-        st.text_input("ユーザー名", key="username")
-        st.text_input("パスワード", type="password", key="password")
-        st.button("ログイン", on_click=password_entered, use_container_width=True)
-        if st.session_state.get("password_correct") == False:
-            st.error("😕 ユーザー名またはパスワードが正しくありません")
+        st.title("🔒 ログイン")
+        # フォームにすることでEnterキーでの送信に対応
+        with st.form("login_form"):
+            st.text_input("ユーザー名", key="username")
+            st.text_input("パスワード", type="password", key="password")
+            submit = st.form_submit_button("ログイン", use_container_width=True)
+            if submit:
+                login_action()
+                if st.session_state.get("password_correct"):
+                    st.rerun()
+                else:
+                    st.error("😕 ユーザー名またはパスワードが正しくありません")
     return False
 
-# ログインしていない場合は処理を停止
 if not check_password():
     st.stop()
 
-# --- 2. 共通サイドバー (ログアウト・アップロード) ---
+# --- 2. 共通サイドバー (アップロード機能) ---
 with st.sidebar:
     st.header("👤 ユーザー設定")
     if st.button("ログアウト", use_container_width=True):
@@ -49,7 +55,6 @@ with st.sidebar:
         st.rerun()
     
     st.divider()
-    
     st.header("📁 新規データ登録")
     with st.form("upload_form", clear_on_submit=True):
         subject = st.text_input("教科名 (例: 数学I)")
@@ -59,14 +64,14 @@ with st.sidebar:
 
         if submit_button:
             if uploaded_file and subject:
-                with st.spinner("アップロード中..."):
+                with st.spinner("AWSへアップロード中..."):
                     try:
                         if upload_exam(uploaded_file, subject, year):
                             st.success("アップロード完了！")
-                            st.cache_data.clear() 
+                            st.cache_data.clear() # キャッシュをクリアして最新化
                             st.rerun()
                     except Exception as e:
-                        st.error(f"エラー: {e}")
+                        st.error(f"アップロードエラー: {e}")
             else:
                 st.warning("教科名とファイルは必須です。")
 
@@ -76,7 +81,7 @@ def fetch_all_data():
     try:
         exams = get_all_exams()
     except Exception as e:
-        print(f"AWS Fetch Error: {e}")
+        st.error(f"AWS接続エラー: {e}")
         exams = []
     
     # デモデータ
@@ -87,50 +92,45 @@ def fetch_all_data():
     ]
     return demo_exams + exams
 
-# --- 4. メインコンテンツ ---
+# --- 4. メインコンテンツ (データフレーム版) ---
 st.title("📝 過去問掲示サイト")
 
 all_exams = fetch_all_data()
+df = pd.DataFrame(all_exams)
 
-st.header("🔍 登録済み試験一覧")
-c1, c2 = st.columns([3, 1])
-with c1:
-    search_query = st.text_input("教科名で検索", placeholder="教科名を入力してください...")
-with c2:
-    # 年度リストの作成
-    years = sorted(list(set(exam['year'] for exam in all_exams)), reverse=True)
-    year_filter = st.selectbox("年度で絞り込み", ["すべて"] + years)
+# 列名の整理とフォーマット
+if not df.empty:
+    df['created_at'] = pd.to_datetime(df['created_at']).dt.strftime('%Y-%m-%d %H:%M')
+    
+    st.header("🔍 登録済み試験一覧")
+    
+    # フィルタリングUI
+    c1, c2 = st.columns([3, 1])
+    with c1:
+        search_query = st.text_input("教科名で検索", placeholder="教科名を入力してください...")
+    with c2:
+        years = sorted(df['year'].unique().tolist(), reverse=True)
+        year_filter = st.selectbox("年度で絞り込み", ["すべて"] + [int(y) for y in years])
 
-# フィルタリング
-filtered_exams = [
-    e for e in all_exams 
-    if search_query.lower() in e['subject'].lower() and 
-    (year_filter == "すべて" or e['year'] == year_filter)
-]
-filtered_exams.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+    # フィルタリング実行
+    filtered_df = df.copy()
+    if search_query:
+        filtered_df = filtered_df[filtered_df['subject'].str.contains(search_query, case=False)]
+    if year_filter != "all" and year_filter != "すべて":
+        filtered_df = filtered_df[filtered_df['year'] == year_filter]
 
-# 一覧表示
-if not filtered_exams:
-    st.info("条件に一致するデータが見つかりませんでした。")
+    # インタラクティブなデータ表示
+    st.data_editor(
+        filtered_df,
+        column_config={
+            "subject": "教科名",
+            "year": st.column_config.NumberColumn("年度", format="%d"),
+            "created_at": "登録日時",
+            "file_url": st.column_config.LinkColumn("ファイルリンク", display_text="開く")
+        },
+        hide_index=True,
+        use_container_width=True,
+        disabled=True # 閲覧専用
+    )
 else:
-    # ヘッダー行
-    h_col1, h_col2, h_col3, h_col4 = st.columns([2, 1, 2, 1])
-    h_col1.write("**教科名**")
-    h_col2.write("**年度**")
-    h_col3.write("**登録日時**")
-    h_col4.write("**アクション**")
-    st.divider()
-
-    for i, exam in enumerate(filtered_exams):
-        col1, col2, col3, col4 = st.columns([2, 1, 2, 1])
-        col1.write(exam['subject'])
-        col2.write(f"{exam['year']}年度")
-        
-        # 日時フォーマットの調整
-        raw_date = exam.get('created_at', '不明')
-        created_at = raw_date[:16].replace('T', ' ') if raw_date != '不明' else '不明'
-        col3.write(created_at)
-        
-        # リンクボタン
-        col4.link_button("開く", exam['file_url'], use_container_width=True)
-        st.divider()
+    st.info("データがまだ登録されていません。")
