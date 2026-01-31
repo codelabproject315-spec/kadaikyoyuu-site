@@ -1,85 +1,80 @@
 import boto3
 import os
-import datetime
-import streamlit as st
-from botocore.exceptions import ClientError
+import uuid
+from dotenv import load_dotenv
 
-# --- 設定の読み込み (Secrets優先) ---
-def get_secret(key, default=None):
-    return st.secrets.get(key) or os.getenv(key) or default
+# ローカル環境用（Streamlit CloudではSecretsが優先されます）
+load_dotenv()
 
-BUCKET_NAME = get_secret("S3_BUCKET_NAME")
-TABLE_NAME = get_secret("DYNAMO_TABLE_NAME") 
-REGION = get_secret("AWS_DEFAULT_REGION", "ap-northeast-1")
-ACCESS_KEY = get_secret("AWS_ACCESS_KEY_ID")
-SECRET_KEY = get_secret("AWS_SECRET_ACCESS_KEY")
+# --- AWS設定の読み込み ---
+# 変数名をあなたの環境（DYNAMO_TABLE_NAME）に合わせています
+REGION = os.getenv("AWS_DEFAULT_REGION", "ap-northeast-1")
+BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
+TABLE_NAME = os.getenv("DYNAMO_TABLE_NAME")
 
-# AWSクライアントの初期化
-session = boto3.Session(
-    aws_access_key_id=ACCESS_KEY,
-    aws_secret_access_key=SECRET_KEY,
-    region_name=REGION
-)
+# クライアントの初期化
+s3 = boto3.client('s3', region_name=REGION)
+dynamodb = boto3.resource('dynamodb', region_name=REGION)
 
-s3 = session.client('s3')
-dynamodb = session.resource('dynamodb')
-
-def get_table():
-    if not TABLE_NAME:
-        st.error("❌ Secretsに 'DYNAMO_TABLE_NAME' が設定されていません。")
-        return None
-    return dynamodb.Table(TABLE_NAME)
-
-def upload_exam(file, subject, year):
-    table = get_table()
-    if not table or not BUCKET_NAME:
-        return False
-    
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    file_key = f"exams/{year}/{subject}_{timestamp}_{file.name}"
-    
-    try:
-        s3.upload_fileobj(file, BUCKET_NAME, file_key, ExtraArgs={'ContentType': file.type})
-        file_url = f"https://{BUCKET_NAME}.s3.{REGION}.amazonaws.com/{file_key}"
-        
-        table.put_item(Item={
-            'exam_id': file_key,
-            'subject': subject,
-            'year': int(year),
-            'file_url': file_url,
-            'file_key': file_key,
-            'created_at': datetime.datetime.now().isoformat()
-        })
-        return True
-    except Exception as e:
-        st.error(f"AWSアップロードエラー: {e}")
-        return False
+# テーブル名の取得チェック
+if not TABLE_NAME:
+    raise ValueError("環境変数 'DYNAMO_TABLE_NAME' が設定されていません。")
+table = dynamodb.Table(TABLE_NAME)
 
 def get_all_exams():
-    table = get_table()
-    if not table: return []
+    """DynamoDBからすべての過去問データを取得"""
     try:
         response = table.scan()
         return response.get('Items', [])
     except Exception as e:
+        print(f"Error scanning DynamoDB: {e}")
         return []
 
-def delete_exam(exam_id, file_key):
-    """S3とDynamoDBからの削除処理（データ欠落に対応）"""
-    table = get_table()
-    if not table: return False
+def upload_exam(file_obj, filename, subject, year, exam_type):
+    """S3にファイルをアップロードし、DynamoDBにメタデータを保存"""
     try:
-        # 1. file_key（S3のパス）がある場合のみS3から削除
-        if file_key and str(file_key) != "None":
-            try:
-                s3.delete_object(Bucket=BUCKET_NAME, Key=file_key)
-            except Exception as s3_e:
-                # ファイルが既になくてもDB削除へ進むために警告にとどめる
-                st.warning(f"S3ファイルの削除に失敗（スキップ）: {s3_e}")
+        # 1. S3へのアップロード
+        file_key = f"exams/{uuid.uuid4()}_{filename}"
+        s3.upload_fileobj(file_obj, BUCKET_NAME, file_key)
+        
+        # 2. DynamoDBへの保存
+        exam_id = str(uuid.uuid4())
+        item = {
+            'exam_id': exam_id,
+            'subject': subject,
+            'year': year,
+            'exam_type': exam_type,
+            'file_key': file_key,
+            'filename': filename
+        }
+        table.put_item(Item=item)
+        return True
+    except Exception as e:
+        print(f"Error uploading exam: {e}")
+        return False
 
-        # 2. DynamoDBからレコードを削除
+def delete_exam(exam_id, file_key):
+    """DynamoDBのレコードとS3のファイルを削除"""
+    try:
+        # 1. S3から削除
+        s3.delete_object(Bucket=BUCKET_NAME, Key=file_key)
+        
+        # 2. DynamoDBから削除
         table.delete_item(Key={'exam_id': exam_id})
         return True
     except Exception as e:
-        st.error(f"AWS削除エラー: {e}")
+        print(f"Error deleting exam: {e}")
         return False
+
+def generate_presigned_url(file_key):
+    """S3のファイルを閲覧するための期間限定URLを発行"""
+    try:
+        url = s3.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': BUCKET_NAME, 'Key': file_key},
+            ExpiresIn=3600  # 1時間有効
+        )
+        return url
+    except Exception as e:
+        print(f"Error generating URL: {e}")
+        return None
