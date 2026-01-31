@@ -29,10 +29,7 @@ def check_password():
     _, col, _ = st.columns([1, 2, 1])
     with col:
         st.title("🔒 ログインが必要です")
-        # サイドバーにログアウトボタンを追加
-if st.sidebar.button("ログアウト"):
-    st.session_state["password_correct"] = False
-    st.rerun()
+
         st.text_input("ユーザー名", key="username")
         st.text_input("パスワード", type="password", key="password")
         st.button("ログイン", on_click=password_entered, use_container_width=True)
