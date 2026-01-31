@@ -1,9 +1,10 @@
 import boto3
 import datetime
 import streamlit as st
+import uuid
 from botocore.exceptions import ClientError
 
-# --- 1. 設定の取得 (st.secrets に完全統一) ---
+# --- 1. 設定の取得 ---
 def get_config():
     """Streamlit Secrets から設定を一括取得する"""
     return {
@@ -17,11 +18,9 @@ def get_config():
 # --- 2. AWSリソースの取得 ---
 def get_aws_resources():
     config = get_config()
-    
-    # 必須設定が欠けている場合のチェック (Bucket Nameも追加)
     required_keys = ["ACCESS_KEY", "SECRET_KEY", "BUCKET_NAME", "TABLE_NAME"]
     if not all(config.get(k) for k in required_keys):
-        st.error("❌ AWS設定（Access Key, Secret Key, Bucket, または Table Name）が Secrets に見つかりません。")
+        st.error("❌ AWS設定が不足しています。Secretsを確認してください。")
         return None, None, None
 
     try:
@@ -46,20 +45,25 @@ def upload_exam(file, subject, year):
     if not s3 or not table:
         return False
     
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    file_key = f"exams/{year}/{subject}_{timestamp}_{file.name}"
+    # 日本語ファイル名によるエラーを防ぐため、UUIDをファイル名に使用
+    file_ext = file.name.split('.')[-1]
+    safe_filename = f"{uuid.uuid4()}.{file_ext}"
+    file_key = f"exams/{year}/{safe_filename}"
     
     try:
-        # S3アップロード
-        s3.upload_fileobj(file, config["BUCKET_NAME"], file_key, ExtraArgs={'ContentType': file.type})
-        file_url = f"https://{config['BUCKET_NAME']}.s3.{config['REGION']}.amazonaws.com/{file_key}"
+        # S3アップロード（ACL設定なしでアップロード可能）
+        s3.upload_fileobj(
+            file, 
+            config["BUCKET_NAME"], 
+            file_key, 
+            ExtraArgs={'ContentType': file.type}
+        )
         
-        # DynamoDB保存
+        # DynamoDB保存（URLは取得時に生成するため、ここではkeyを重視）
         table.put_item(Item={
-            'exam_id': file_key,
+            'exam_id': str(uuid.uuid4()), # ユニークなID
             'subject': subject,
             'year': int(year),
-            'file_url': file_url,
             'file_key': file_key,
             'created_at': datetime.datetime.now().isoformat()
         })
@@ -69,13 +73,30 @@ def upload_exam(file, subject, year):
         return False
 
 def get_all_exams():
-    """全データを取得"""
-    _, table, _ = get_aws_resources()
-    if not table:
+    """全データを取得し、S3の署名付きURLを付与する"""
+    s3, table, config = get_aws_resources()
+    if not table or not s3:
         return []
     try:
         response = table.scan()
-        return response.get('Items', [])
+        items = response.get('Items', [])
+        
+        # 各データに対して一時的な署名付きURLを発行
+        for item in items:
+            if 'file_key' in item:
+                try:
+                    # 1時間（3600秒）有効なURLを生成
+                    item['file_url'] = s3.generate_presigned_url(
+                        'get_object',
+                        Params={
+                            'Bucket': config["BUCKET_NAME"],
+                            'Key': item['file_key']
+                        },
+                        ExpiresIn=3600
+                    )
+                except Exception:
+                    item['file_url'] = "#"
+        return items
     except Exception as e:
         st.error(f"データ取得エラー: {e}")
         return []
@@ -87,14 +108,11 @@ def delete_exam(exam_id, file_key):
         return False
     
     try:
-        # 1. S3から削除
+        # 1. S3から物理ファイルを削除
         if file_key and str(file_key) != "None":
-            try:
-                s3.delete_object(Bucket=config["BUCKET_NAME"], Key=file_key)
-            except Exception as s3_e:
-                st.warning(f"S3ファイルの削除に失敗（スキップ可能）: {s3_e}")
+            s3.delete_object(Bucket=config["BUCKET_NAME"], Key=file_key)
 
-        # 2. DynamoDBから削除
+        # 2. DynamoDBからレコードを削除
         table.delete_item(Key={'exam_id': exam_id})
         return True
     except Exception as e:
