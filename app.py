@@ -1,10 +1,5 @@
 import streamlit as st
-import os
-from dotenv import load_dotenv
 from utils.aws_helper import upload_exam, get_all_exams, delete_exam
-
-# ローカル用設定読み込み
-load_dotenv()
 
 st.set_page_config(page_title="過去問掲示サイト", layout="wide", page_icon="📝")
 
@@ -14,13 +9,11 @@ def check_password():
         return True
 
     def password_entered():
-        # Secretsまたは環境変数から正解のパスワードを取得
-        correct_password = st.secrets.get("LOGIN_PASSWORD") or os.getenv("LOGIN_PASSWORD")
+        # Secrets から正解のパスワードを取得
+        correct_password = st.secrets.get("LOGIN_PASSWORD")
 
-        # パスワードが一致すればログインを許可
         if st.session_state.get("password") == correct_password:
             st.session_state["password_correct"] = True
-            # 入力された任意のユーザー名を権限判定用に保存
             st.session_state["login_user"] = st.session_state["username"]
             del st.session_state["password"]
             del st.session_state["username"]
@@ -30,7 +23,6 @@ def check_password():
     _, col, _ = st.columns([1, 2, 1])
     with col:
         st.title("🔒 ログイン")
-        # 案内文を削除し、シンプルなフォームに
         with st.form("login_form"):
             st.text_input("ユーザー名", key="username", placeholder="ユーザー名を入力してください")
             st.text_input("パスワード", type="password", key="password", placeholder="パスワードを入力してください")
@@ -48,7 +40,6 @@ with st.sidebar:
     st.header("👤 ユーザー情報")
     st.write(f"ログイン中: **{current_user}**")
     
-    # 権限の状態をサイドバーでさりげなく表示
     if current_user == "admin":
         st.success("管理者モード: 全操作が可能")
     else:
@@ -79,10 +70,10 @@ with st.sidebar:
 @st.cache_data(ttl=600)
 def fetch_all_data():
     exams = get_all_exams()
+    # デモ用のダミーデータ（必要なければ削除してください）
     demo_pdf_url = "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf"
     demo_exams = [
         {"exam_id": "demo1", "subject": "【デモ】数学", "year": 2025, "created_at": "2025-10-23T10:00:00", "file_url": demo_pdf_url, "file_key": "demo/1"},
-        {"exam_id": "demo2", "subject": "【デモ】英語コミュニケーション", "year": 2023, "created_at": "2025-12-07T15:30:00", "file_url": demo_pdf_url, "file_key": "demo/2"}
     ]
     return demo_exams + exams
 
@@ -124,11 +115,8 @@ else:
         cols[3].link_button("開く", exam['file_url'], width='stretch')
         
         with cols[4]:
-            # デモデータ
             if "demo" in str(exam.get('exam_id', '')):
                 st.button("固定", key=f"fixed_{i}", disabled=True, width='stretch')
-            
-            # 管理者 (admin) の場合のみ削除を許可
             elif st.session_state.get("login_user") == "admin":
                 with st.popover("削除", width='stretch'):
                     st.warning("消去しますか？")
@@ -138,9 +126,6 @@ else:
                         if eid and delete_exam(eid, fkey):
                             st.cache_data.clear()
                             st.rerun()
-            
-            # それ以外のユーザー（削除ボタンを非表示にする、またはロックアイコンを表示）
             else:
                 st.write("🔒")
-
         st.divider()
