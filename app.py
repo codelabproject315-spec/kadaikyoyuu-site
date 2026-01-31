@@ -81,8 +81,8 @@ def fetch_all_data():
     exams = get_all_exams()
     demo_pdf_url = "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf"
     demo_exams = [
-        {"exam_id": "demo1", "subject": "【デモ】物理学基礎", "year": 2025, "created_at": "2025-10-23T10:00:00", "file_url": demo_pdf_url, "file_key": "demo/1"},
-        {"exam_id": "demo2", "subject": "【デモ】プログラミング演習", "year": 2025, "created_at": "2025-12-07T15:30:00", "file_url": demo_pdf_url, "file_key": "demo/2"}
+        {"exam_id": "demo1", "subject": "【デモ】数学", "year": 2025, "created_at": "2025-10-23T10:00:00", "file_url": demo_pdf_url, "file_key": "demo/1"},
+        {"exam_id": "demo2", "subject": "【デモ】英語コミュニケーション", "year": 2023, "created_at": "2025-12-07T15:30:00", "file_url": demo_pdf_url, "file_key": "demo/2"}
     ]
     return demo_exams + exams
 
