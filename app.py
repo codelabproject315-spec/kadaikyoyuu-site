@@ -3,7 +3,7 @@ import os
 from dotenv import load_dotenv
 from utils.aws_helper import upload_exam, get_all_exams, delete_exam
 
-# .envファイルを読み込む
+# ローカル用設定読み込み
 load_dotenv()
 
 st.set_page_config(page_title="過去問掲示サイト", layout="wide", page_icon="📝")
@@ -14,13 +14,13 @@ def check_password():
         return True
 
     def password_entered():
-        # パスワードだけを Secrets または環境変数から取得
+        # Secretsまたは環境変数から正解のパスワードを取得
         correct_password = st.secrets.get("LOGIN_PASSWORD") or os.getenv("LOGIN_PASSWORD")
 
-        # どんなユーザー名を入力しても、パスワードが合っていればログインOKにする
+        # パスワードが一致すればログインを許可
         if st.session_state.get("password") == correct_password:
             st.session_state["password_correct"] = True
-            # 入力されたユーザー名（admin, guest, 自分の名前など）を保存
+            # 入力された任意のユーザー名を権限判定用に保存
             st.session_state["login_user"] = st.session_state["username"]
             del st.session_state["password"]
             del st.session_state["username"]
@@ -30,10 +30,10 @@ def check_password():
     _, col, _ = st.columns([1, 2, 1])
     with col:
         st.title("🔒 過去問アーカイブ")
-        st.info("※admin または guest でログインしてください (共通パスワード)")
+        # 案内文を削除し、シンプルなフォームに
         with st.form("login_form"):
-            st.text_input("ユーザー名", key="username", placeholder="admin または guest")
-            st.text_input("パスワード", type="password", key="password")
+            st.text_input("ユーザー名", key="username", placeholder="ユーザー名を入力してください")
+            st.text_input("パスワード", type="password", key="password", placeholder="パスワードを入力してください")
             st.form_submit_button("ログイン", on_click=password_entered, width='stretch')
         if st.session_state.get("password_correct") == False:
             st.error("😕 パスワードが正しくありません")
@@ -48,11 +48,11 @@ with st.sidebar:
     st.header("👤 ユーザー情報")
     st.write(f"ログイン中: **{current_user}**")
     
-    # 権限の可視化
+    # 権限の状態をサイドバーでさりげなく表示
     if current_user == "admin":
-        st.success("権限: 管理者 (削除可能)")
+        st.success("管理者モード: 全操作が可能")
     else:
-        st.warning("権限: 一般ユーザー (閲覧・投稿のみ)")
+        st.info("一般モード: 閲覧と投稿が可能")
 
     if st.button("ログアウト", width='stretch', type="primary"):
         st.session_state["password_correct"] = False
@@ -123,7 +123,6 @@ else:
         
         cols[3].link_button("開く", exam['file_url'], width='stretch')
         
-        # --- 権限に基づく削除ボタンの制御 ---
         with cols[4]:
             # デモデータ
             if "demo" in str(exam.get('exam_id', '')):
@@ -140,8 +139,8 @@ else:
                             st.cache_data.clear()
                             st.rerun()
             
-            # それ以外のユーザー
+            # それ以外のユーザー（削除ボタンを非表示にする、またはロックアイコンを表示）
             else:
-                st.button("禁止", key=f"lock_{i}", disabled=True, width='stretch', help="削除は管理者のみ可能です")
+                st.write("🔒")
 
         st.divider()
