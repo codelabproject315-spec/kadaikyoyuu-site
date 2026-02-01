@@ -9,6 +9,10 @@ def check_password():
         return True
 
     def password_entered():
+        # ★追加：入力されたらログアウトメッセージを消す
+        if "logged_out" in st.query_params:
+            del st.query_params["logged_out"]
+            
         correct_password = st.secrets.get("LOGIN_PASSWORD")
         if st.session_state.get("password") == correct_password:
             st.session_state["password_correct"] = True
@@ -21,11 +25,18 @@ def check_password():
     _, col, _ = st.columns([1, 2, 1])
     with col:
         st.title("🔒 ログイン")
+        
+        # ★追加：ログアウト直後だけ青いメッセージを出す
+        if st.query_params.get("logged_out") == "true":
+            st.info("✅ ログアウトしました。")
+
         with st.form("login_form"):
             st.text_input("ユーザー名", key="username", placeholder="ユーザー名を入力してください")
             st.text_input("パスワード", type="password", key="password", placeholder="パスワードを入力してください")
             st.form_submit_button("ログイン", on_click=password_entered, width='stretch')
-        if st.session_state.get("password_correct") == False:
+        
+        # ★修正：パスワードが空（ログアウト直後など）の時はエラーを出さない
+        if st.session_state.get("password_correct") == False and st.session_state.get("password") not in [None, ""]:
             st.error("😕 パスワードが正しくありません")
     return False
 
@@ -43,8 +54,14 @@ with st.sidebar:
     else:
         st.info("一般モード: 閲覧と投稿が可能")
 
+    # --- サイドバー内のログアウトボタン部分 ---
     if st.button("ログアウト", width='stretch', type="primary"):
-        st.session_state["password_correct"] = False
+        # セッション状態（入力内容など）をすべて削除
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
+        
+        # URLに「ログアウトしたよ」という印を付けてリロード
+        st.query_params["logged_out"] = "true"
         st.rerun()
     
     st.divider()
