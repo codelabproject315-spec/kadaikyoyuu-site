@@ -47,7 +47,7 @@ def check_password():
 
     _, col, _ = st.columns([1, 2, 1])
     with col:
-        st.title("🔒 SIT 過去問掲示板 ログイン")
+        st.title("🔒 過去問掲示板 ログイン")
         st.write("大学公式メールアドレス、または管理者アカウントでログインしてください。")
         
         if st.query_params.get("logged_out") == "true":
@@ -55,7 +55,7 @@ def check_password():
             st.query_params.clear()
 
         with st.form("login_form"):
-            st.text_input("ユーザー名 / メールアドレス", key="username", placeholder="example@sit.ac.jp")
+            st.text_input("ユーザー名 / メールアドレス", key="username", placeholder="メールアドレスを入力")
             st.text_input("パスワード", type="password", key="password", placeholder="パスワードを入力")
             st.form_submit_button("ログイン", on_click=password_entered, width='stretch')
 
