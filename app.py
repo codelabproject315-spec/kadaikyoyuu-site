@@ -9,16 +9,15 @@ def check_password():
         return True
 
     def password_entered():
-        # ★追加：入力されたらログアウトメッセージを消す
-        if "logged_out" in st.query_params:
-            del st.query_params["logged_out"]
+        # ログイン試行時は念のためパラメータをクリア
+        st.query_params.clear()
             
         correct_password = st.secrets.get("LOGIN_PASSWORD")
         if st.session_state.get("password") == correct_password:
             st.session_state["password_correct"] = True
             st.session_state["login_user"] = st.session_state["username"]
-            del st.session_state["password"]
-            del st.session_state["username"]
+            if "password" in st.session_state: del st.session_state["password"]
+            if "username" in st.session_state: del st.session_state["username"]
         else:
             st.session_state["password_correct"] = False
 
@@ -26,20 +25,25 @@ def check_password():
     with col:
         st.title("🔒 ログイン")
         
-        # ★追加：ログアウト直後だけ青いメッセージを出す
+        # --- ここがポイント ---
+        # ログアウトフラグがある場合のみメッセージを表示
         if st.query_params.get("logged_out") == "true":
             st.info("✅ ログアウトしました。")
+            # 表示した直後にURLパラメータをクリアする
+            # これにより、次にボタンを押したり入力したりした時には消える
+            st.query_params.clear() 
+        # ---------------------
 
         with st.form("login_form"):
             st.text_input("ユーザー名", key="username", placeholder="ユーザー名を入力してください")
             st.text_input("パスワード", type="password", key="password", placeholder="パスワードを入力してください")
             st.form_submit_button("ログイン", on_click=password_entered, width='stretch')
         
-        # ★修正：パスワードが空（ログアウト直後など）の時はエラーを出さない
-        if st.session_state.get("password_correct") == False and st.session_state.get("password") not in [None, ""]:
+        # パスワードが「空ではないのに間違っている」場合のみエラーを出す
+        if st.session_state.get("password_correct") == False and st.session_state.get("password"):
             st.error("😕 パスワードが正しくありません")
+            
     return False
-
 if not check_password():
     st.stop()
 
