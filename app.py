@@ -1,5 +1,5 @@
 import streamlit as st
-from utils.aws_helper import upload_exam, get_all_exams, delete_exam
+from utils.aws_helper import upload_exam, get_all_exams, delete_exam, get_demo_data
 
 # ページの基本設定
 st.set_page_config(page_title="過去問掲示サイト", layout="wide", page_icon="📝")
@@ -16,19 +16,22 @@ def check_password():
         
         # ドメイン判定
         is_sit = email_or_user.endswith("@sit.ac.jp")
-        is_utokyo = email_or_user.endswith("@g.ecc.u-tokyo.ac.jp") or email_or_user.endswith("@mail.u-tokyo.ac.jp")
+        is_utokyo = (
+            email_or_user.endswith("@g.ecc.u-tokyo.ac.jp") or 
+            email_or_user.endswith("@mail.u-tokyo.ac.jp")
+        )
         is_admin_user = (email_or_user == "admin")
         
         if (is_sit or is_utokyo or is_admin_user) and password == correct_password:
             st.session_state["password_correct"] = True
             
-            # 所属大学をセッションに保存
+            # 大学識別子の保存
             if is_sit:
                 st.session_state["user_univ"] = "SIT"
             elif is_utokyo:
                 st.session_state["user_univ"] = "UTokyo"
             else:
-                st.session_state["user_univ"] = "ADMIN" # adminは全データにアクセス可能
+                st.session_state["user_univ"] = "ADMIN"
 
             st.session_state["login_user"] = email_or_user.split("@")[0]
             
@@ -42,12 +45,20 @@ def check_password():
     _, col, _ = st.columns([1, 2, 1])
     with col:
         st.title("🔒 過去問掲示板 ログイン")
+        st.write("大学公式メールアドレス、または管理者アカウントでログインしてください。")
+        
+        if st.query_params.get("logged_out") == "true":
+            st.info("✅ ログアウトしました。")
+            st.query_params.clear()
+
         with st.form("login_form"):
             st.text_input("ユーザー名 / メールアドレス", key="username", placeholder="こちらに入力してください")
             st.text_input("パスワード", type="password", key="password", placeholder="パスワードを入力")
             st.form_submit_button("ログイン", on_click=password_entered, width='stretch')
+        
         if st.session_state.get("login_error"):
-            st.error("❌ 認証エラー: 入力内容を確認してください。")
+            st.error("❌ 認証エラー: 許可されたドメインかパスワードを確認してください。")
+            
     return False
 
 if not check_password():
@@ -58,10 +69,9 @@ current_user = st.session_state.get('login_user', 'guest')
 user_univ = st.session_state.get('user_univ', 'UNKNOWN')
 is_admin = (current_user.lower() == "admin")
 
-# --- 2. サイドバー ---
+# --- 2. 共通サイドバー ---
 with st.sidebar:
     st.header("👤 ユーザー情報")
-    # 大学名のバッジを表示
     if user_univ == "SIT":
         st.info("🏫 埼玉工業大学")
     elif user_univ == "UTokyo":
@@ -74,6 +84,7 @@ with st.sidebar:
     if st.button("ログアウト", width='stretch', type="primary"):
         for key in list(st.session_state.keys()):
             del st.session_state[key]
+        st.query_params["logged_out"] = "true"
         st.rerun()
     
     st.divider()
@@ -85,27 +96,33 @@ with st.sidebar:
         uploaded_file = st.file_uploader("ファイルを選択", type=["pdf", "png", "jpg", "jpeg"])
         if st.form_submit_button("アップロード", width='stretch'):
             if uploaded_file and subject:
-                # アップロード時に大学情報を付与（※aws_helper.pyに引数を追加する場合）
-                if upload_exam(uploaded_file, subject, year, univ=user_univ):
-                    st.success("アップロード完了！")
-                    st.cache_data.clear()
-                    st.rerun()
+                with st.spinner("処理中..."):
+                    if upload_exam(uploaded_file, subject, year, user_univ):
+                        st.success("アップロード完了！")
+                        st.cache_data.clear()
+                        st.rerun()
+            else:
+                st.warning("教科名とファイルは必須です。")
 
-# --- 3. データ取得とフィルタリング ---
+# --- 3. データ取得 ---
 @st.cache_data(ttl=600)
 def fetch_filtered_data(univ):
     all_data = get_all_exams()
-    # ログインした大学のデータ、または大学情報がない古いデータのみを表示
-    # adminの場合は全件表示
+    
+    # 実データのフィルタリング（自分の大学、またはadminなら全部）
     if univ == "ADMIN":
-        return all_data
-    return [e for e in all_data if e.get('university') == univ or 'university' not in e]
+        real_exams = all_data
+    else:
+        real_exams = [e for e in all_data if e.get('university') == univ or 'university' not in e]
+    
+    # 共通のデモデータを取得
+    demo_exams = get_demo_data()
+    return demo_exams + real_exams
 
 # --- 4. メインコンテンツ ---
-st.title(f"📝 {user_univ} 過去問ページ")
+st.title(f"📝 {user_univ} 過去問掲示板")
 display_exams = fetch_filtered_data(user_univ)
 
-# 検索・表示ロジックは以前と同じ（以下省略可能ですが、一覧表示部分は維持）
 c1, c2 = st.columns([3, 1])
 with c1:
     search_query = st.text_input("🔍 検索", placeholder="教科名を入力...")
@@ -115,25 +132,40 @@ with c2:
 
 filtered_exams = [
     e for e in display_exams 
-    if search_query.lower() in e['subject'].lower() and (year_filter == "すべて" or e['year'] == year_filter)
+    if search_query.lower() in e['subject'].lower() and 
+    (year_filter == "すべて" or e['year'] == year_filter)
 ]
+filtered_exams.sort(key=lambda x: x.get('created_at', ''), reverse=True)
 
 st.header(f"一覧 ({len(filtered_exams)}件)")
-# ... (以下、テーブル表示部分は変更なし) ...
-for i, exam in enumerate(filtered_exams):
-    cols = st.columns([2, 1, 2, 1, 1])
-    cols[0].write(exam['subject'])
-    cols[1].write(f"{exam['year']}")
-    raw_dt = exam.get('created_at', '不明')
-    cols[2].write(raw_dt[:16].replace('T', ' ') if 'T' in raw_dt else raw_dt)
-    cols[3].link_button("開く", exam['file_url'], width='stretch')
-    with cols[4]:
-        if is_admin:
-            with st.popover("削除"):
-                if st.button("確定", key=f"del_{i}", type="primary"):
-                    if delete_exam(exam.get('exam_id'), exam.get('file_key')):
-                        st.cache_data.clear()
-                        st.rerun()
-        else:
-            st.write("🔒")
+if not filtered_exams:
+    st.info("該当するデータがありません。")
+else:
+    h_cols = st.columns([2, 1, 2, 1, 1])
+    for col, head in zip(h_cols, ["教科名", "年度", "登録日時", "表示", "削除"]):
+        col.write(f"**{head}**")
     st.divider()
+
+    for i, exam in enumerate(filtered_exams):
+        cols = st.columns([2, 1, 2, 1, 1])
+        cols[0].write(exam['subject'])
+        cols[1].write(f"{exam['year']}")
+        
+        raw_dt = exam.get('created_at', '不明')
+        cols[2].write(raw_dt[:16].replace('T', ' ') if 'T' in raw_dt else raw_dt)
+        
+        cols[3].link_button("開く", exam['file_url'], width='stretch')
+        
+        with cols[4]:
+            if "demo" in str(exam.get('exam_id', '')):
+                st.button("固定", key=f"fixed_{i}", disabled=True, width='stretch')
+            elif is_admin:
+                with st.popover("削除", width='stretch'):
+                    st.warning("消去しますか？")
+                    if st.button("確定", key=f"del_{i}", type="primary", width='stretch'):
+                        if delete_exam(exam.get('exam_id'), exam.get('file_key')):
+                            st.cache_data.clear()
+                            st.rerun()
+            else:
+                st.write("🔒")
+        st.divider()
