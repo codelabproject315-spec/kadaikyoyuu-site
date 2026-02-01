@@ -9,26 +9,40 @@ def check_password():
         return True
 
     def password_entered():
-        # Secrets から正解のパスワードを取得
+        # ログイン試行時は念のためパラメータをクリア
+        st.query_params.clear()
+            
         correct_password = st.secrets.get("LOGIN_PASSWORD")
-
         if st.session_state.get("password") == correct_password:
             st.session_state["password_correct"] = True
             st.session_state["login_user"] = st.session_state["username"]
-            del st.session_state["password"]
-            del st.session_state["username"]
+            if "password" in st.session_state: del st.session_state["password"]
+            if "username" in st.session_state: del st.session_state["username"]
         else:
             st.session_state["password_correct"] = False
 
     _, col, _ = st.columns([1, 2, 1])
     with col:
         st.title("🔒 ログイン")
+        
+        # --- ここがポイント ---
+        # ログアウトフラグがある場合のみメッセージを表示
+        if st.query_params.get("logged_out") == "true":
+            st.info("✅ ログアウトしました。")
+            # 表示した直後にURLパラメータをクリアする
+            # これにより、次にボタンを押したり入力したりした時には消える
+            st.query_params.clear() 
+        # ---------------------
+
         with st.form("login_form"):
             st.text_input("ユーザー名", key="username", placeholder="ユーザー名を入力してください")
             st.text_input("パスワード", type="password", key="password", placeholder="パスワードを入力してください")
             st.form_submit_button("ログイン", on_click=password_entered, width='stretch')
-        if st.session_state.get("password_correct") == False:
+        
+        # パスワードが「空ではないのに間違っている」場合のみエラーを出す
+        if st.session_state.get("password_correct") == False and st.session_state.get("password"):
             st.error("😕 パスワードが正しくありません")
+            
     return False
 
 if not check_password():
@@ -45,8 +59,14 @@ with st.sidebar:
     else:
         st.info("一般モード: 閲覧と投稿が可能")
 
+# --- サイドバー内のログアウトボタン部分 ---
     if st.button("ログアウト", width='stretch', type="primary"):
-        st.session_state["password_correct"] = False
+        # セッション状態（入力内容など）をすべて削除
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
+        
+        # URLに「ログアウトしたよ」という印を付けてリロード
+        st.query_params["logged_out"] = "true"
         st.rerun()
     
     st.divider()
