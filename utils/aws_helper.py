@@ -81,10 +81,8 @@ def delete_exam(exam_id, file_key):
         return False
 
 def get_demo_data():
-    """全ユーザー共通のデモデータを返す"""
     demo_url = "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf"
-    
     return [
-        {"exam_id": "demo1", "subject": "【デモ】数学", "year": 2025, "university": "COMMON", "created_at": "2025-10-23T10:00:00", "file_url": demo_url, "file_key": "demo/1"},
-        {"exam_id": "demo2", "subject": "【デモ】コミュニケーション英語", "year": 2024, "university": "COMMON", "created_at": "2025-12-07T15:30:00", "file_url": demo_url, "file_key": "demo/2"}
+        {"exam_id": "demo1", "subject": "【デモ】共通数学", "year": 2025, "university": "共通", "created_at": "2025-10-23T10:00:00", "file_url": demo_url, "file_key": "demo/1"},
+        {"exam_id": "demo2", "subject": "【デモ】共通英語", "year": 2024, "university": "共通", "created_at": "2025-12-07T15:30:00", "file_url": demo_url, "file_key": "demo/2"}
     ]
