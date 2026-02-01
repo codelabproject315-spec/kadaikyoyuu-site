@@ -1,120 +1,104 @@
 import boto3
-import datetime
 import streamlit as st
-import uuid
 from botocore.exceptions import ClientError
+from datetime import datetime
+import os
 
-# --- 1. 設定の取得 ---
-def get_config():
-    """Streamlit Secrets から設定を一括取得する"""
-    return {
-        "ACCESS_KEY": st.secrets.get("AWS_ACCESS_KEY_ID"),
-        "SECRET_KEY": st.secrets.get("AWS_SECRET_ACCESS_KEY"),
-        "REGION": st.secrets.get("AWS_DEFAULT_REGION", "ap-northeast-1"),
-        "BUCKET_NAME": st.secrets.get("S3_BUCKET_NAME"),
-        "TABLE_NAME": st.secrets.get("DYNAMO_TABLE_NAME")
-    }
+# --- AWS接続設定 ---
+# StreamlitのSecrets (.streamlit/secrets.toml) から取得
+try:
+    S3_BUCKET = st.secrets["AWS_S3_BUCKET"]
+    REGION = st.secrets.get("AWS_REGION", "ap-northeast-1")
 
-# --- 2. AWSリソースの取得 ---
-def get_aws_resources():
-    config = get_config()
-    required_keys = ["ACCESS_KEY", "SECRET_KEY", "BUCKET_NAME", "TABLE_NAME"]
-    if not all(config.get(k) for k in required_keys):
-        st.error("❌ AWS設定が不足しています。Secretsを確認してください。")
-        return None, None, None
+    s3_client = boto3.client(
+        "s3",
+        aws_access_key_id=st.secrets["AWS_ACCESS_KEY_ID"],
+        aws_secret_access_key=st.secrets["AWS_SECRET_ACCESS_KEY"],
+        region_name=REGION
+    )
+except KeyError:
+    st.error("AWSの認証情報が設定されていません。secrets.tomlを確認してください。")
+
+def upload_exam(file, subject, year, univ_id):
+    """
+    ファイルをS3にアップロードする。
+    パス構造: {univ_id}/{year}/{subject}_{timestamp}.ext
+    例: sit.ac.jp/2024/数学_20260201.pdf
+    """
+    # タイムスタンプ生成
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    file_extension = os.path.splitext(file.name)[1]
+    
+    # 埼玉工業大学(sit.ac.jp)などのドメインをフォルダ名に使用
+    file_key = f"{univ_id}/{year}/{subject}_{timestamp}{file_extension}"
 
     try:
-        session = boto3.Session(
-            aws_access_key_id=config["ACCESS_KEY"],
-            aws_secret_access_key=config["SECRET_KEY"],
-            region_name=config["REGION"]
-        )
-        s3 = session.client('s3')
-        dynamodb = session.resource('dynamodb')
-        table = dynamodb.Table(config["TABLE_NAME"])
-        return s3, table, config
-    except Exception as e:
-        st.error(f"❌ AWS接続エラー: {e}")
-        return None, None, None
-
-# --- 3. 各操作関数 ---
-
-def upload_exam(file, subject, year):
-    """過去問をS3にアップロードし、DynamoDBにメタデータを保存"""
-    s3, table, config = get_aws_resources()
-    if not s3 or not table:
-        return False
-    
-    # 日本語ファイル名によるエラーを防ぐため、UUIDをファイル名に使用
-    file_ext = file.name.split('.')[-1]
-    safe_filename = f"{uuid.uuid4()}.{file_ext}"
-    file_key = f"exams/{year}/{safe_filename}"
-    
-    try:
-        # S3アップロード（ACL設定なしでアップロード可能）
-        s3.upload_fileobj(
+        s3_client.upload_fileobj(
             file, 
-            config["BUCKET_NAME"], 
-            file_key, 
-            ExtraArgs={'ContentType': file.type}
+            S3_BUCKET, 
+            file_key,
+            ExtraArgs={
+                "ContentType": file.type,
+                "Metadata": {
+                    "university_id": univ_id,
+                    "subject": subject,
+                    "year": str(year)
+                }
+            }
         )
-        
-        # DynamoDB保存（URLは取得時に生成するため、ここではkeyを重視）
-        table.put_item(Item={
-            'exam_id': str(uuid.uuid4()), # ユニークなID
-            'subject': subject,
-            'year': int(year),
-            'file_key': file_key,
-            'created_at': datetime.datetime.now().isoformat()
-        })
         return True
-    except Exception as e:
-        st.error(f"AWSアップロードエラー: {e}")
+    except ClientError as e:
+        st.error(f"アップロード失敗: {e}")
         return False
 
 def get_all_exams():
-    """全データを取得し、S3の署名付きURLを付与する"""
-    s3, table, config = get_aws_resources()
-    if not table or not s3:
-        return []
+    """
+    S3バケット内の全オブジェクトを取得し、情報をリスト化して返す
+    """
+    exams = []
     try:
-        response = table.scan()
-        items = response.get('Items', [])
+        # バケット内のオブジェクトをリストアップ
+        response = s3_client.list_objects_v2(Bucket=S3_BUCKET)
         
-        # 各データに対して一時的な署名付きURLを発行
-        for item in items:
-            if 'file_key' in item:
-                try:
-                    # 1時間（3600秒）有効なURLを生成
-                    item['file_url'] = s3.generate_presigned_url(
+        if "Contents" in response:
+            for obj in response["Contents"]:
+                key = obj["Key"]
+                # パス形式: univ_id/year/filename
+                parts = key.split("/")
+                
+                if len(parts) >= 3:
+                    u_id = parts[0]
+                    yr = parts[1]
+                    fname = parts[2]
+                    
+                    # 署名付きURLを発行（1時間有効）
+                    # これにより、非公開設定のファイルも安全に閲覧可能
+                    url = s3_client.generate_presigned_url(
                         'get_object',
-                        Params={
-                            'Bucket': config["BUCKET_NAME"],
-                            'Key': item['file_key']
-                        },
+                        Params={'Bucket': S3_BUCKET, 'Key': key},
                         ExpiresIn=3600
                     )
-                except Exception:
-                    item['file_url'] = "#"
-        return items
-    except Exception as e:
-        st.error(f"データ取得エラー: {e}")
-        return []
+                    
+                    exams.append({
+                        "exam_id": key,
+                        "university_id": u_id,  # App.pyでのフィルタリングに使用
+                        "subject": fname.split("_")[0], # ファイル名から教科名を復元
+                        "year": yr,
+                        "file_url": url,
+                        "file_key": key
+                    })
+    except ClientError as e:
+        st.error(f"データ取得失敗: {e}")
+    
+    return exams
 
 def delete_exam(exam_id, file_key):
-    """S3ファイルとDynamoDBレコードを削除"""
-    s3, table, config = get_aws_resources()
-    if not s3 or not table:
-        return False
-    
+    """
+    指定されたファイルをS3から削除する
+    """
     try:
-        # 1. S3から物理ファイルを削除
-        if file_key and str(file_key) != "None":
-            s3.delete_object(Bucket=config["BUCKET_NAME"], Key=file_key)
-
-        # 2. DynamoDBからレコードを削除
-        table.delete_item(Key={'exam_id': exam_id})
+        s3_client.delete_object(Bucket=S3_BUCKET, Key=file_key)
         return True
-    except Exception as e:
-        st.error(f"AWS削除エラー: {e}")
+    except ClientError as e:
+        st.error(f"削除失敗: {e}")
         return False
