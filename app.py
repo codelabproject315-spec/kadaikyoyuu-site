@@ -13,49 +13,55 @@ def check_password():
 
     def password_entered():
         """ログインボタンが押された時の処理"""
-        email = st.session_state.get("username", "").strip()
+        email_or_user = st.session_state.get("username", "").strip()
         password = st.session_state.get("password", "")
         correct_password = st.secrets.get("LOGIN_PASSWORD")
         
-        # --- ドメイン認証ロジック ---
-        # ドメインを @sit.ac.jp に修正
-        is_sit_email = email.lower().endswith("@sit.ac.jp")
+        # --- ドメイン・管理者認証ロジック ---
+        # 1. 埼玉工業大学のドメインチェック
+        is_sit_email = email_or_user.lower().endswith("@sit.ac.jp")
+        # 2. 管理者固定ユーザー名「admin」のチェック
+        is_admin_username = (email_or_user.lower() == "admin")
         
-        if is_sit_email and password == correct_password:
+        # 「SITのメアド」または「admin」であり、かつパスワードが一致する場合
+        if (is_sit_email or is_admin_username) and password == correct_password:
             st.session_state["password_correct"] = True
-            # メールアドレスのID部分をユーザー名として保持
-            st.session_state["login_user"] = email.split("@")[0]
             
-            # セッションから一時入力を削除
+            # ユーザー名の保存
+            if "@" in email_or_user:
+                st.session_state["login_user"] = email_or_user.split("@")[0]
+            else:
+                st.session_state["login_user"] = email_or_user
+            
+            # 不要なセッション情報をクリア
             if "password" in st.session_state: del st.session_state["password"]
             if "username" in st.session_state: del st.session_state["username"]
             if "login_error" in st.session_state: del st.session_state["login_error"]
             st.query_params.clear()
         else:
             st.session_state["password_correct"] = False
-            if not is_sit_email:
+            if not (is_sit_email or is_admin_username):
                 st.session_state["login_error"] = "DOMAIN_ERROR"
             else:
                 st.session_state["login_error"] = "PASSWORD_ERROR"
 
     _, col, _ = st.columns([1, 2, 1])
     with col:
-        st.title("🔒過去問掲示板 ログイン")
-        st.write("大学公式メールアドレスでログインしてください。")
+        st.title("🔒 SIT 過去問掲示板 ログイン")
+        st.write("大学公式メールアドレス、または管理者アカウントでログインしてください。")
         
         if st.query_params.get("logged_out") == "true":
             st.info("✅ ログアウトしました。")
             st.query_params.clear()
 
         with st.form("login_form"):
-            # プレースホルダーから具体的な学籍番号の例を削除
-            st.text_input("大学メールアドレス", key="username", placeholder="メールアドレスを入力")
+            st.text_input("ユーザー名 / メールアドレス", key="username", placeholder="example@sit.ac.jp")
             st.text_input("パスワード", type="password", key="password", placeholder="パスワードを入力")
             st.form_submit_button("ログイン", on_click=password_entered, width='stretch')
 
         error_type = st.session_state.get("login_error")
         if error_type == "DOMAIN_ERROR":
-            st.error("❌ 認証エラー: 埼玉工業大学（@sit.ac.jp）のメールアドレスのみ使用可能です。")
+            st.error("❌ 認証エラー: 埼玉工業大学（@sit.ac.jp）のメールアドレス以外は許可されていません。")
         elif error_type == "PASSWORD_ERROR":
             st.error("😕 パスワードが正しくありません。")
             
@@ -65,9 +71,9 @@ if not check_password():
     st.stop()
 
 # --- 管理者判定ロジック ---
-# adminという文字列、またはあなたの学籍番号(2403036)の場合に管理者権限を付与
+# ログイン中のユーザー名が厳密に "admin" の場合のみ管理権限を付与
 current_user = st.session_state.get('login_user', 'guest')
-is_admin = current_user in ["admin", "2403036"]
+is_admin = (current_user.lower() == "admin")
 
 # --- 2. 共通サイドバー ---
 with st.sidebar:
@@ -153,7 +159,7 @@ else:
         with cols[4]:
             if "demo" in str(exam.get('exam_id', '')):
                 st.button("固定", key=f"fixed_{i}", disabled=True, width='stretch')
-            # 管理者権限（is_admin）がある場合のみ削除ボタンを表示
+            # ログインユーザーが admin の場合のみ削除が可能
             elif is_admin:
                 with st.popover("削除", width='stretch'):
                     st.warning("消去しますか？")
