@@ -18,10 +18,10 @@ def get_config():
 def get_aws_resources():
     config = get_config()
     
-    # 必須設定が欠けている場合のチェック (Bucket Nameも追加)
+    # 必須設定のチェック
     required_keys = ["ACCESS_KEY", "SECRET_KEY", "BUCKET_NAME", "TABLE_NAME"]
     if not all(config.get(k) for k in required_keys):
-        st.error("❌ AWS設定（Access Key, Secret Key, Bucket, または Table Name）が Secrets に見つかりません。")
+        st.error("❌ AWS設定が Secrets に見つかりません。")
         return None, None, None
 
     try:
@@ -40,14 +40,18 @@ def get_aws_resources():
 
 # --- 3. 各操作関数 ---
 
-def upload_exam(file, subject, year):
-    """過去問をS3にアップロードし、DynamoDBにメタデータを保存"""
+def upload_exam(file, subject, year, univ):
+    """
+    過去問をS3にアップロードし、DynamoDBにメタデータを保存。
+    univ引数により大学情報を追加保存する。
+    """
     s3, table, config = get_aws_resources()
     if not s3 or not table:
         return False
     
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    file_key = f"exams/{year}/{subject}_{timestamp}_{file.name}"
+    # S3のパスにも大学名を含めて整理しやすくする
+    file_key = f"exams/{univ}/{year}/{subject}_{timestamp}_{file.name}"
     
     try:
         # S3アップロード
@@ -59,6 +63,7 @@ def upload_exam(file, subject, year):
             'exam_id': file_key,
             'subject': subject,
             'year': int(year),
+            'university': univ,    # ここで大学情報を保存
             'file_url': file_url,
             'file_key': file_key,
             'created_at': datetime.datetime.now().isoformat()
@@ -69,7 +74,7 @@ def upload_exam(file, subject, year):
         return False
 
 def get_all_exams():
-    """全データを取得"""
+    """DynamoDBから全データをスキャンして取得"""
     _, table, _ = get_aws_resources()
     if not table:
         return []
@@ -92,7 +97,7 @@ def delete_exam(exam_id, file_key):
             try:
                 s3.delete_object(Bucket=config["BUCKET_NAME"], Key=file_key)
             except Exception as s3_e:
-                st.warning(f"S3ファイルの削除に失敗（スキップ可能）: {s3_e}")
+                st.warning(f"S3ファイルの削除に失敗: {s3_e}")
 
         # 2. DynamoDBから削除
         table.delete_item(Key={'exam_id': exam_id})
