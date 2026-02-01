@@ -50,7 +50,7 @@ def check_password():
         st.title("🔒 過去問掲示板 ログイン")
         with st.form("login_form"):
             st.text_input("ユーザー名 / メールアドレス", key="username", placeholder="大学のメールアドレスを入力")
-            st.text_input("パスワード", type="password", key="password")
+            st.text_input("パスワード", type="password", key="password",placeholder="パスワードを入力")
             st.form_submit_button("ログイン", on_click=password_entered, width='stretch')
         if st.session_state.get("login_error"):
             st.error("❌ 認証エラー: 許可された大学ドメインかパスワードを確認してください。")
