@@ -7,7 +7,7 @@ import os
 def get_s3_resource():
     """AWS S3への接続を確立し、クライアントとバケット名を返す"""
     try:
-        # StreamlitのSecretsから情報を読み込む
+        # StreamlitのSecretsから認証情報を読み込む
         client = boto3.client(
             "s3",
             aws_access_key_id=st.secrets["AWS_ACCESS_KEY_ID"],
@@ -21,10 +21,11 @@ def get_s3_resource():
         return None, None
 
 def upload_exam(file, subject, year, univ_id):
+    """大学IDをフォルダ名(Prefix)にしてS3にアップロードする"""
     client, bucket = get_s3_resource()
     if not client: return False
     
-    # 埼玉工業大学(sit.ac.jp)などのドメインをフォルダ名にして保存
+    # パス構造: univ_id/年度/ファイル名
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     file_extension = os.path.splitext(file.name)[1]
     file_key = f"{univ_id}/{year}/{subject}_{timestamp}{file_extension}"
@@ -36,7 +37,11 @@ def upload_exam(file, subject, year, univ_id):
             file_key,
             ExtraArgs={
                 "ContentType": file.type,
-                "Metadata": {"university_id": univ_id, "subject": subject, "year": str(year)}
+                "Metadata": {
+                    "university_id": univ_id,
+                    "subject": subject,
+                    "year": str(year)
+                }
             }
         )
         return True
@@ -45,6 +50,7 @@ def upload_exam(file, subject, year, univ_id):
         return False
 
 def get_all_exams():
+    """S3から全データを取得し、大学IDを含むリストを返す"""
     client, bucket = get_s3_resource()
     if not client: return []
     
@@ -55,11 +61,11 @@ def get_all_exams():
             for obj in response["Contents"]:
                 key = obj["Key"]
                 parts = key.split("/")
-                # パスが「大学ドメイン/年度/ファイル名」の形式か確認
+                # 正しい階層（大学/年度/ファイル）であるか確認
                 if len(parts) >= 3:
-                    u_id = parts[0]
+                    u_id = parts[0] # ここに sit.ac.jp 等が入る
                     
-                    # 署名付きURLを発行（1時間有効）
+                    # 1時間有効な署名付きURLを発行
                     url = client.generate_presigned_url(
                         'get_object',
                         Params={'Bucket': bucket, 'Key': key},
@@ -68,17 +74,17 @@ def get_all_exams():
                     
                     exams.append({
                         "exam_id": key,
-                        "university_id": u_id, # ここでsit.ac.jpなどを判別
+                        "university_id": u_id,
                         "subject": parts[2].split("_")[0],
                         "year": parts[1],
-                        "file_url": url,
-                        "file_key": key
+                        "file_url": url
                     })
     except ClientError as e:
         st.error(f"データ取得失敗: {e}")
     return exams
 
 def delete_exam(file_key):
+    """指定されたファイルを削除する"""
     client, bucket = get_s3_resource()
     if not client: return False
     try:
