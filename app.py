@@ -70,10 +70,11 @@ with st.sidebar:
 @st.cache_data(ttl=600)
 def fetch_all_data():
     exams = get_all_exams()
-    # デモ用のダミーデータ（必要なければ削除してください）
+    # 【デモデータを2件に戻しました】
     demo_pdf_url = "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf"
     demo_exams = [
         {"exam_id": "demo1", "subject": "【デモ】数学", "year": 2025, "created_at": "2025-10-23T10:00:00", "file_url": demo_pdf_url, "file_key": "demo/1"},
+        {"exam_id": "demo2", "subject": "【デモ】英語コミュニケーション", "year": 2023, "created_at": "2025-12-07T15:30:00", "file_url": demo_pdf_url, "file_key": "demo/2"}
     ]
     return demo_exams + exams
 
@@ -85,9 +86,11 @@ c1, c2 = st.columns([3, 1])
 with c1:
     search_query = st.text_input("🔍 検索", placeholder="教科名を入力...")
 with c2:
+    # 登録されている全データから年度を抽出
     years = sorted(list(set(exam['year'] for exam in all_exams)), reverse=True)
     year_filter = st.selectbox("📅 年度", ["すべて"] + years)
 
+# 検索とフィルタリングの適用
 filtered_exams = [
     e for e in all_exams 
     if search_query.lower() in e['subject'].lower() and 
@@ -99,11 +102,13 @@ st.header(f"一覧 ({len(filtered_exams)}件)")
 if not filtered_exams:
     st.info("該当するデータがありません。")
 else:
+    # テーブルヘッダー
     h_cols = st.columns([2, 1, 2, 1, 1])
     for col, head in zip(h_cols, ["教科名", "年度", "登録日時", "表示", "削除"]):
         col.write(f"**{head}**")
     st.divider()
 
+    # データ行の表示
     for i, exam in enumerate(filtered_exams):
         cols = st.columns([2, 1, 2, 1, 1])
         cols[0].write(exam['subject'])
@@ -115,8 +120,11 @@ else:
         cols[3].link_button("開く", exam['file_url'], width='stretch')
         
         with cols[4]:
+            # デモデータは削除不可
             if "demo" in str(exam.get('exam_id', '')):
                 st.button("固定", key=f"fixed_{i}", disabled=True, width='stretch')
+            
+            # 管理者のみ削除ボタンを表示
             elif st.session_state.get("login_user") == "admin":
                 with st.popover("削除", width='stretch'):
                     st.warning("消去しますか？")
@@ -127,5 +135,6 @@ else:
                             st.cache_data.clear()
                             st.rerun()
             else:
+                # 一般ユーザーにはロックアイコンを表示
                 st.write("🔒")
         st.divider()
