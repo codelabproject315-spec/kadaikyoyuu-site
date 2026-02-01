@@ -8,19 +8,29 @@ def check_password():
     if st.session_state.get("password_correct", False):
         return True
 
-    def password_entered():
-        # ログイン試行時は念のためパラメータをクリア
-        st.query_params.clear()
-            
-        correct_password = st.secrets.get("LOGIN_PASSWORD")
-        if st.session_state.get("password") == correct_password:
-            st.session_state["password_correct"] = True
-            st.session_state["login_user"] = st.session_state["username"]
-            if "password" in st.session_state: del st.session_state["password"]
-            if "username" in st.session_state: del st.session_state["username"]
-        else:
-            st.session_state["password_correct"] = False
+    # app.py の該当箇所を以下のように修正
 
+def password_entered():
+    st.query_params.clear()
+    
+    # 入力値の取得
+    email = st.session_state.get("username", "")
+    password = st.session_state.get("password")
+    correct_password = st.secrets.get("LOGIN_PASSWORD")
+    
+    # --- ドメイン認証ロジック ---
+    # 1. @sit.jp で終わっているかチェック
+    is_sit_email = email.endswith("@sit.jp")
+    
+    if is_sit_email and password == correct_password:
+        st.session_state["password_correct"] = True
+        st.session_state["login_user"] = email.split("@")[0] # ID部分をユーザー名にする
+        if "password" in st.session_state: del st.session_state["password"]
+        if "username" in st.session_state: del st.session_state["username"]
+    else:
+        st.session_state["password_correct"] = False
+        if not is_sit_email:
+            st.error("❌ 埼玉工業大学のメールアドレス（@sit.jp）のみログイン可能です。")
     _, col, _ = st.columns([1, 2, 1])
     with col:
         st.title("🔒 ログイン")
@@ -34,11 +44,12 @@ def check_password():
             st.query_params.clear() 
         # ---------------------
 
-        with st.form("login_form"):
-            st.text_input("ユーザー名", key="username", placeholder="ユーザー名を入力してください")
-            st.text_input("パスワード", type="password", key="password", placeholder="パスワードを入力してください")
-            st.form_submit_button("ログイン", on_click=password_entered, width='stretch')
-        
+        # app.py のフォーム部分
+
+with st.form("login_form"):
+    st.text_input("大学メールアドレス", key="username", placeholder="example@sit.jp")
+    st.text_input("パスワード", type="password", key="password", placeholder="パスワードを入力")
+    st.form_submit_button("ログイン", on_click=password_entered, width='stretch')
         # パスワードが「空ではないのに間違っている」場合のみエラーを出す
         if st.session_state.get("password_correct") == False and st.session_state.get("password"):
             st.error("😕 パスワードが正しくありません")
